@@ -434,7 +434,7 @@ export default function NewFabricForm({ onSuccess }: NewFabricFormProps) {
                 <Label htmlFor={`v_hex_${index}`}>Hex Color (Optional)</Label>
                 <Input
                   id={`v_hex_${index}`}
-                  value={variant.hexColorCode || ""}
+                  value={variant.hexColorCode ?? ""}
                   onChange={(e) =>
                     handleVariantChange(index, "hexColorCode", e.target.value)
                   }

@@ -59,7 +59,7 @@ export default function FabricListPage() {
   };
 
   useEffect(() => {
-    loadFabrics();
+    void loadFabrics();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -67,9 +67,10 @@ export default function FabricListPage() {
     // Client-side execution of Server Action
     const handleDelete = async () => {
       if (window.confirm("Are you sure you want to delete this fabric?")) {
+        // FIX 2: Await the deleteFabric Server Action
         const result = await deleteFabric(fabricId);
         if (result.success) {
-          // Re-fetch data on successful delete
+          // Ensure data reload is also awaited
           await loadFabrics();
         } else {
           alert(result.message);
