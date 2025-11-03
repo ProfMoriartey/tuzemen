@@ -1,8 +1,8 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { deleteFabric } from "../actions/actions";
-import { fetchFabricData } from "../server-utils";
+import { deleteFabric } from "../../actions/actions";
+import { fetchFabricData } from "../../../utils/server-utils";
 import NewFabricForm from "./NewFabricForm";
 import EditFabricForm from "./EditFabricForm"; // NEW IMPORT
 import {

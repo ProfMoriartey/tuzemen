@@ -2,8 +2,8 @@
 
 import React, { useState, useTransition } from "react";
 // Imports are now allowed because the file extension is .tsx
-import { createFabric } from "../actions/actions";
-import { fabricSchema, type FabricFormInput } from "../../lib/types";
+import { createFabric } from "../../actions/actions";
+import { fabricSchema, type FabricFormInput } from "../../../lib/types";
 import { cn } from "~/lib/utils";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
@@ -11,6 +11,7 @@ import { Label } from "~/components/ui/label";
 import { Card, CardContent, CardTitle } from "~/components/ui/card";
 import { Checkbox } from "~/components/ui/checkbox";
 import { Loader2, Plus, X } from "lucide-react";
+import { UploadDropzone, UploadButton } from "~/lib/uploadthing";
 
 // Define Props for the component
 interface NewFabricFormProps {
@@ -26,7 +27,7 @@ const initialVariant = {
   hexColorCode: "",
 };
 
-// Default fabric data reset state
+// Default fabric data reset state (used for type inference and reset)
 const defaultFabricData = {
   externalId: "",
   name: "",
@@ -54,30 +55,40 @@ const defaultFabricData = {
 // --- Custom Hook ---
 
 const useFormState = (onSuccess: () => void) => {
-  const [formErrors, setFormErrors] = useState<Record<string, string[]>>({}); // Explicitly typed errors
-  const [variantInputs, setVariantInputs] = useState([initialVariant] as {
-    variantCode: string;
-    variantName: string;
-    variantImage: string;
-    stockQuantity: number;
-    hexColorCode: string | undefined;
-  }[]);
+  const [formErrors, setFormErrors] = useState<Record<string, string[]>>({});
+  const [variantInputs, setVariantInputs] = useState([
+    initialVariant,
+  ] as FabricFormInput["variants"]);
   const [isPending, startTransition] = useTransition();
   const [statusMessage, setStatusMessage] = useState({ type: "", text: "" });
   const [fabricData, setFabricData] = useState(defaultFabricData);
 
-  // Handles text, number, and image fields
-  const handleMainChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const { id, value, type, checked } = e.target;
+  // Unified setter for any field, used by both input events and Uploadthing
+  const setMainField = (
+    id: keyof typeof defaultFabricData,
+    value: string | number | boolean,
+  ) => {
     setFabricData((prev) => ({
       ...prev,
-      [id]: type === "checkbox" ? checked : value,
+      [id]: value,
     }));
   };
 
-  // Handles boolean (checkbox) fields
+  // Handles standard HTML input change events (text, number)
+  const handleMainChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const { id, value, type, checked } = e.target;
+    const fieldId = id as keyof typeof defaultFabricData;
+
+    if (type === "checkbox") {
+      setMainField(fieldId, checked);
+    } else {
+      setMainField(fieldId, value);
+    }
+  };
+
+  // Handles boolean (checkbox) fields from Shadcn/UI
   const handleCheckboxChange = (id: string, checked: boolean) => {
-    setFabricData((prev) => ({ ...prev, [id]: checked }));
+    setMainField(id as keyof typeof defaultFabricData, checked);
   };
 
   // Variant array management
@@ -85,6 +96,7 @@ const useFormState = (onSuccess: () => void) => {
     setVariantInputs((prev) => [...prev, initialVariant]);
   const removeVariant = (index: number) =>
     setVariantInputs((prev) => prev.filter((_, i) => i !== index));
+
   const handleVariantChange = (
     index: number,
     field: string,
@@ -103,15 +115,13 @@ const useFormState = (onSuccess: () => void) => {
     setFormErrors({});
     setStatusMessage({ type: "", text: "" });
 
-    // 1. Combine data
     const rawData = {
       ...fabricData,
       variants: variantInputs,
       widthCm: Number(fabricData.widthCm),
       weightGsm: Number(fabricData.weightGsm),
-    } as FabricFormInput; // Use FabricFormInput type
+    } as FabricFormInput;
 
-    // 2. Validate locally
     const validation = fabricSchema.safeParse(rawData);
 
     if (!validation.success) {
@@ -124,7 +134,6 @@ const useFormState = (onSuccess: () => void) => {
       return;
     }
 
-    // 3. Call Server Action
     startTransition(async () => {
       const result = await createFabric(validation.data);
 
@@ -148,6 +157,7 @@ const useFormState = (onSuccess: () => void) => {
     formErrors,
     statusMessage,
     isPending,
+    setMainField,
     handleMainChange,
     handleCheckboxChange,
     addVariant,
@@ -166,6 +176,7 @@ export default function NewFabricForm({ onSuccess }: NewFabricFormProps) {
     formErrors,
     statusMessage,
     isPending,
+    setMainField,
     handleMainChange,
     handleCheckboxChange,
     addVariant,
@@ -181,9 +192,7 @@ export default function NewFabricForm({ onSuccess }: NewFabricFormProps) {
     return null;
   };
 
-  // Array of boolean fields for easy rendering
   const booleanFields = [
-    // Features
     { id: "isNormal", label: "Normal Wash" },
     { id: "isSensitiveClean", label: "Sensitive Clean" },
     { id: "isDryClean", label: "Dry Clean" },
@@ -191,8 +200,7 @@ export default function NewFabricForm({ onSuccess }: NewFabricFormProps) {
     { id: "isTransparent", label: "Transparent" },
     { id: "isDrapery", label: "Drapery" },
     { id: "isBlackout", label: "Blackout" },
-    { id: "hasLeadband", label: "Has Leadband" },
-    // Weave/Type
+    { id: "hasLeadband", label: "Leadband" },
     { id: "isPlainKnit", label: "Plain Knit" },
     { id: "isJacquardKnit", label: "Jacquard Knit" },
     { id: "isPlainTulle", label: "Plain Tulle" },
@@ -201,6 +209,50 @@ export default function NewFabricForm({ onSuccess }: NewFabricFormProps) {
     { id: "isJacquardBase", label: "Jacquard Base" },
     { id: "isKnit", label: "General Knit" },
   ];
+
+  // Helper function to render image preview or the dropzone
+  const renderImageField = (value: string, onChange: (url: string) => void) => {
+    if (value) {
+      return (
+        <div className="relative w-full rounded-md border border-gray-300 bg-gray-100 p-2 dark:border-gray-700 dark:bg-gray-800">
+          <img
+            src={value}
+            alt="Uploaded Image"
+            className="h-auto max-h-32 w-full rounded-md object-contain"
+          />
+          <Button
+            type="button"
+            variant="destructive"
+            size="icon"
+            onClick={() => onChange("")}
+            className="absolute top-1 right-1 h-6 w-6 rounded-full shadow-lg"
+          >
+            <X className="h-4 w-4" />
+          </Button>
+        </div>
+      );
+    }
+
+    return (
+      <UploadButton
+        endpoint="imageUploader"
+        onClientUploadComplete={(res) => {
+          const firstFile = res?.[0];
+          if (firstFile) {
+            onChange(firstFile.url);
+            console.log("Image uploaded successfully:", firstFile.url);
+          }
+        }}
+        onUploadError={(error: Error) => {
+          alert(`Upload Error: ${error.message}`);
+        }}
+        content={{
+          allowedContent: "Image (4MB)",
+        }}
+        className="w-full rounded-lg border-2 border-dashed p-2"
+      />
+    );
+  };
 
   return (
     <div>
@@ -231,7 +283,6 @@ export default function NewFabricForm({ onSuccess }: NewFabricFormProps) {
               id="externalId"
               value={fabricData.externalId}
               onChange={handleMainChange}
-              className={cn(getError("externalId") && "border-red-500")}
               placeholder="e.g., TZM0151"
             />
             {getError("externalId") && (
@@ -247,7 +298,6 @@ export default function NewFabricForm({ onSuccess }: NewFabricFormProps) {
               id="name"
               value={fabricData.name}
               onChange={handleMainChange}
-              className={cn(getError("name") && "border-red-500")}
               placeholder="e.g., Accent"
             />
             {getError("name") && (
@@ -263,14 +313,8 @@ export default function NewFabricForm({ onSuccess }: NewFabricFormProps) {
               id="composition"
               value={fabricData.composition}
               onChange={handleMainChange}
-              className={cn(getError("composition") && "border-red-500")}
               placeholder="e.g., %100 PES"
             />
-            {getError("composition") && (
-              <p className="mt-1 text-sm text-red-500">
-                {getError("composition")}
-              </p>
-            )}
           </div>
 
           <div>
@@ -280,11 +324,7 @@ export default function NewFabricForm({ onSuccess }: NewFabricFormProps) {
               type="number"
               value={fabricData.widthCm}
               onChange={handleMainChange}
-              className={cn(getError("widthCm") && "border-red-500")}
             />
-            {getError("widthCm") && (
-              <p className="mt-1 text-sm text-red-500">{getError("widthCm")}</p>
-            )}
           </div>
 
           <div>
@@ -294,25 +334,17 @@ export default function NewFabricForm({ onSuccess }: NewFabricFormProps) {
               type="number"
               value={fabricData.weightGsm}
               onChange={handleMainChange}
-              className={cn(getError("weightGsm") && "border-red-500")}
             />
-            {getError("weightGsm") && (
-              <p className="mt-1 text-sm text-red-500">
-                {getError("weightGsm")}
-              </p>
-            )}
           </div>
         </div>
 
+        {/* --- BASE IMAGE UPLOAD --- */}
         <div>
-          <Label htmlFor="baseImage">Base Image URL (Uploadthing Link)</Label>
-          <Input
-            id="baseImage"
-            value={fabricData.baseImage}
-            onChange={handleMainChange}
-            className={cn(getError("baseImage") && "border-red-500")}
-            placeholder="https://utfs.io/f/base_image.jpg"
-          />
+          <Label htmlFor="baseImage">Base Fabric Image</Label>
+          {renderImageField(
+            fabricData.baseImage,
+            (url) => setMainField("baseImage", url), // Direct call to setMainField
+          )}
           {getError("baseImage") && (
             <p className="mt-1 text-sm text-red-500">{getError("baseImage")}</p>
           )}
@@ -357,7 +389,7 @@ export default function NewFabricForm({ onSuccess }: NewFabricFormProps) {
         <div className="space-y-4">
           {variantInputs.map((variant, index) => (
             <Card
-              key={index}
+              key={variant.id || `new-${index}`}
               className="relative bg-gray-50 p-4 dark:bg-gray-800"
             >
               <div className="mb-4 flex items-center justify-between">
@@ -400,16 +432,13 @@ export default function NewFabricForm({ onSuccess }: NewFabricFormProps) {
                   />
                 </div>
 
+                {/* --- VARIANT IMAGE UPLOAD (Using new helper) --- */}
                 <div className="md:col-span-2">
-                  <Label htmlFor={`v_image_${index}`}>Image URL</Label>
-                  <Input
-                    id={`v_image_${index}`}
-                    value={variant.variantImage}
-                    onChange={(e) =>
-                      handleVariantChange(index, "variantImage", e.target.value)
-                    }
-                    placeholder="https://utfs.io/f/variant_1.jpg"
-                  />
+                  <Label htmlFor={`v_image_${index}`}>Variant Image</Label>
+                  {renderImageField(
+                    variant.variantImage,
+                    (url) => handleVariantChange(index, "variantImage", url), // Direct URL update
+                  )}
                 </div>
 
                 <div className="md:col-span-1">
@@ -429,12 +458,11 @@ export default function NewFabricForm({ onSuccess }: NewFabricFormProps) {
                 </div>
               </div>
 
-              {/* Hex Color Code - optional */}
               <div className="mt-2">
                 <Label htmlFor={`v_hex_${index}`}>Hex Color (Optional)</Label>
                 <Input
                   id={`v_hex_${index}`}
-                  value={variant.hexColorCode ?? ""}
+                  value={variant.hexColorCode || ""}
                   onChange={(e) =>
                     handleVariantChange(index, "hexColorCode", e.target.value)
                   }

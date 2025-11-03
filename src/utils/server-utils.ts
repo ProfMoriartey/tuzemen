@@ -1,4 +1,4 @@
-import { getFabrics } from "./actions/actions";
+import { getFabrics } from "../app/actions/actions";
 
 /**
  * Server-side function to fetch fabric data.

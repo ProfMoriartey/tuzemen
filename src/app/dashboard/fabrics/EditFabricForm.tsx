@@ -1,12 +1,12 @@
 "use client";
 
 import React, { useState, useTransition, useEffect } from "react";
-import { updateFabric, getFabricForEdit } from "../actions/actions";
+import { updateFabric, getFabricForEdit } from "../../actions/actions";
 import {
   fabricSchema,
   type FabricFormInput,
   type VariantFormInput,
-} from "../../lib/types";
+} from "../../../lib/types";
 import { cn } from "~/lib/utils";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
@@ -15,7 +15,7 @@ import { Card, CardTitle } from "~/components/ui/card";
 import { Checkbox } from "~/components/ui/checkbox";
 import { Loader2, Plus, X } from "lucide-react";
 import { Badge } from "~/components/ui/badge";
-
+import { UploadButton } from "~/lib/uploadthing";
 // Define Props for the component
 interface EditFabricFormProps {
   fabricId: number;
@@ -69,6 +69,17 @@ const useEditFormState = (fabricId: number, onSuccess: () => void) => {
   const [statusMessage, setStatusMessage] = useState({ type: "", text: "" });
   const [fabricData, setFabricData] = useState(defaultFabricData);
 
+  // Unified setter for main fabric fields (used by inputs and Uploadthing)
+  const setMainField = (
+    id: keyof typeof defaultFabricData,
+    value: string | number | boolean,
+  ) => {
+    setFabricData((prev) => ({
+      ...prev,
+      [id]: value,
+    }));
+  };
+
   // Load existing data on mount
   useEffect(() => {
     const loadData = async () => {
@@ -76,10 +87,8 @@ const useEditFormState = (fabricId: number, onSuccess: () => void) => {
       try {
         const data = await getFabricForEdit(fabricId);
         if (data) {
-          // Destructure variants out of the fabric data for separate state management
           const { variants, ...mainData } = data;
 
-          // Map Drizzle data (which uses internal keys like id, fabricId) to form state
           const initialVariants: VariantState[] = variants.map((v) => ({
             id: v.id, // KEEP the DB ID for existing variants
             variantCode: v.variantCode,
@@ -108,17 +117,20 @@ const useEditFormState = (fabricId: number, onSuccess: () => void) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fabricId]);
 
-  // Handlers (mostly same as NewFabricForm)
+  // Handlers
   const handleMainChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { id, value, type, checked } = e.target;
-    setFabricData((prev) => ({
-      ...prev,
-      [id]: type === "checkbox" ? checked : value,
-    }));
+    const fieldId = id as keyof typeof defaultFabricData;
+
+    if (type === "checkbox") {
+      setMainField(fieldId, checked);
+    } else {
+      setMainField(fieldId, value);
+    }
   };
 
   const handleCheckboxChange = (id: string, checked: boolean) => {
-    setFabricData((prev) => ({ ...prev, [id]: checked }));
+    setMainField(id as keyof typeof defaultFabricData, checked);
   };
 
   const addVariant = () =>
@@ -144,7 +156,6 @@ const useEditFormState = (fabricId: number, onSuccess: () => void) => {
     setFormErrors({});
     setStatusMessage({ type: "", text: "" });
 
-    // 1. Combine data (including the internal IDs for existing variants)
     const rawData = {
       ...fabricData,
       variants: variantInputs,
@@ -152,7 +163,6 @@ const useEditFormState = (fabricId: number, onSuccess: () => void) => {
       weightGsm: Number(fabricData.weightGsm),
     } as FabricFormInput;
 
-    // 2. Validate locally
     const validation = fabricSchema.safeParse(rawData);
 
     if (!validation.success) {
@@ -165,9 +175,8 @@ const useEditFormState = (fabricId: number, onSuccess: () => void) => {
       return;
     }
 
-    // 3. Call UPDATE Server Action
     startTransition(async () => {
-      const result = await updateFabric(fabricId, validation.data); // Pass fabricId
+      const result = await updateFabric(fabricId, validation.data);
 
       if (result.success) {
         setStatusMessage({ type: "success", text: result.message });
@@ -188,6 +197,7 @@ const useEditFormState = (fabricId: number, onSuccess: () => void) => {
     statusMessage,
     isPending,
     isLoading,
+    setMainField, // Exported for use with Uploadthing
     handleMainChange,
     handleCheckboxChange,
     addVariant,
@@ -210,6 +220,7 @@ export default function EditFabricForm({
     statusMessage,
     isPending,
     isLoading,
+    setMainField,
     handleMainChange,
     handleCheckboxChange,
     addVariant,
@@ -242,6 +253,50 @@ export default function EditFabricForm({
     { id: "isJacquardBase", label: "Jacquard Base" },
     { id: "isKnit", label: "General Knit" },
   ];
+
+  // Helper function to render image preview or the dropzone
+  const renderImageField = (value: string, onChange: (url: string) => void) => {
+    if (value) {
+      return (
+        <div className="relative w-full rounded-md border border-gray-300 bg-gray-100 p-2 dark:border-gray-700 dark:bg-gray-800">
+          <img
+            src={value}
+            alt="Uploaded Image"
+            className="h-auto max-h-32 w-full rounded-md object-contain"
+          />
+          <Button
+            type="button"
+            variant="destructive"
+            size="icon"
+            onClick={() => onChange("")} // Clear the field state on remove
+            className="absolute top-1 right-1 h-6 w-6 rounded-full shadow-lg"
+          >
+            <X className="h-4 w-4" />
+          </Button>
+        </div>
+      );
+    }
+
+    return (
+      <UploadButton
+        endpoint="imageUploader"
+        onClientUploadComplete={(res) => {
+          const firstFile = res?.[0];
+          if (firstFile) {
+            onChange(firstFile.url);
+            console.log("Image uploaded successfully:", firstFile.url);
+          }
+        }}
+        onUploadError={(error: Error) => {
+          alert(`Upload Error: ${error.message}`);
+        }}
+        content={{
+          allowedContent: "Image (4MB)",
+        }}
+        className="w-full rounded-lg border-2 border-dashed p-2"
+      />
+    );
+  };
 
   if (isLoading) {
     return (
@@ -306,7 +361,6 @@ export default function EditFabricForm({
           </div>
         </div>
 
-        {/* ... (Rest of Core Input fields: Composition, Width, Weight, BaseImage) ... */}
         <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
           <div>
             <Label htmlFor="composition">Composition</Label>
@@ -336,14 +390,17 @@ export default function EditFabricForm({
             />
           </div>
         </div>
+
+        {/* --- BASE IMAGE UPLOAD --- */}
         <div>
-          <Label htmlFor="baseImage">Base Image URL</Label>
-          <Input
-            id="baseImage"
-            value={fabricData.baseImage}
-            onChange={handleMainChange}
-            placeholder="https://utfs.io/f/base_image.jpg"
-          />
+          <Label htmlFor="baseImage">Base Fabric Image</Label>
+          {renderImageField(
+            fabricData.baseImage,
+            (url) => setMainField("baseImage", url), // Direct call to setMainField
+          )}
+          {getError("baseImage") && (
+            <p className="mt-1 text-sm text-red-500">{getError("baseImage")}</p>
+          )}
         </div>
 
         {/* --- BOOLEAN FLAGS SECTION --- */}
@@ -356,7 +413,9 @@ export default function EditFabricForm({
             <div key={id} className="flex items-center space-x-2">
               <Checkbox
                 id={id}
-                checked={fabricData[id as keyof typeof fabricData] as boolean}
+                checked={
+                  fabricData[id as keyof typeof defaultFabricData] as boolean
+                }
                 onCheckedChange={(checked) =>
                   handleCheckboxChange(id, !!checked)
                 }
@@ -433,16 +492,13 @@ export default function EditFabricForm({
                   />
                 </div>
 
+                {/* --- VARIANT IMAGE UPLOAD (Using new helper) --- */}
                 <div className="md:col-span-2">
-                  <Label htmlFor={`v_image_${index}`}>Image URL</Label>
-                  <Input
-                    id={`v_image_${index}`}
-                    value={variant.variantImage}
-                    onChange={(e) =>
-                      handleVariantChange(index, "variantImage", e.target.value)
-                    }
-                    placeholder="https://utfs.io/f/variant_1.jpg"
-                  />
+                  <Label htmlFor={`v_image_${index}`}>Variant Image</Label>
+                  {renderImageField(
+                    variant.variantImage,
+                    (url) => handleVariantChange(index, "variantImage", url), // Direct URL update
+                  )}
                 </div>
 
                 <div className="md:col-span-1">
