@@ -1,26 +1,23 @@
 "use server";
 
-// Use relative paths to resolve import errors
 import { db } from "../../server/db";
 import { fabrics, fabricVariants } from "../../server/db/schema";
-import { fabricSchema, type FabricFormInput } from "../../lib/types";
+import { fabricSchema, type FabricFormInput, type VariantFormInput } from "../../lib/types";
 import { revalidatePath } from "next/cache";
-import { eq } from "drizzle-orm";
+import { eq, and, notInArray, desc } from "drizzle-orm"; // Added desc for ordering
 
-// --- CREATE FABRIC ACTION ---
+// ===================================
+// --- 1. CREATE FABRIC ACTION ---
+// ===================================
 
 /**
  * Server Action to create a new Fabric design and its associated Variants in a single transaction.
- * @param formData - The validated input data for the new fabric and its variants.
- * @returns A status message indicating success or failure.
  */
 export async function createFabric(formData: FabricFormInput) {
-  // 1. Input Validation using Zod
   const validation = fabricSchema.safeParse(formData);
 
   if (!validation.success) {
     const errors = validation.error.flatten().fieldErrors;
-    console.error("Validation Error:", errors);
     return {
       success: false,
       message: "Validation failed. Please check the form data.",
@@ -31,9 +28,8 @@ export async function createFabric(formData: FabricFormInput) {
   const { variants, ...fabricData } = validation.data;
 
   try {
-    // 2. Start a Drizzle transaction for atomicity
     await db.transaction(async (tx) => {
-      // 3. Insert the main Fabric record
+      // Insert the main Fabric record
       const [newFabric] = await tx.insert(fabrics).values({
         ...fabricData,
       }).returning({ id: fabrics.id });
@@ -45,7 +41,7 @@ export async function createFabric(formData: FabricFormInput) {
         throw new Error("Failed to retrieve new fabric ID after insertion.");
       }
 
-      // 4. Prepare and insert Fabric Variants
+      // Prepare and insert Fabric Variants
       const variantInserts = variants.map((variant) => ({
         ...variant,
         fabricId: fabricId,
@@ -56,7 +52,6 @@ export async function createFabric(formData: FabricFormInput) {
 
     });
 
-    // 5. Success cleanup
     revalidatePath("/fabrics");
     
     return {
@@ -77,37 +72,148 @@ export async function createFabric(formData: FabricFormInput) {
     console.error("Database Transaction Error:", error);
     return {
       success: false,
-      message: `Failed to create fabric due to a database error. Check server logs.`,
+      message: `Failed to create fabric due to a database error.`,
       error: error instanceof Error ? error.message : "An unknown error occurred.",
     };
   }
 }
 
-
-// --- READ FABRIC ACTION ---
+// ===================================
+// --- 2. READ ACTIONS ---
+// ===================================
 
 /**
  * Server Action to fetch all fabrics along with their associated variants.
- * This is an async component data fetcher.
- * @returns An array of fabrics with embedded variants.
  */
 export async function getFabrics() {
-    // 1. Fetch fabrics and eagerly load variants using Drizzle's relations
     const fabricList = await db.query.fabrics.findMany({
-        orderBy: (fabrics, { desc }) => [desc(fabrics.createdAt)],
+        orderBy: (fabrics) => [desc(fabrics.createdAt)],
         with: {
             variants: {
                 orderBy: (variants, { asc }) => [asc(variants.variantCode)],
             }
         },
     });
-
-    // 2. Return the structured list
     return fabricList;
 }
 
+/**
+ * Server Action to fetch a single fabric record for pre-filling an edit form.
+ */
+export async function getFabricForEdit(id: number) {
+    const fabric = await db.query.fabrics.findFirst({
+        where: eq(fabrics.id, id),
+        with: {
+            variants: true,
+        },
+    });
+    return fabric;
+}
 
-// --- DELETE FABRIC ACTION ---
+// ===================================
+// --- 3. UPDATE FABRIC ACTION ---
+// ===================================
+
+/**
+ * Server Action to update an existing Fabric design and manage its Variants.
+ */
+export async function updateFabric(fabricId: number, formData: FabricFormInput) {
+    // 1. Input Validation using Zod
+    const validation = fabricSchema.safeParse(formData);
+
+    if (!validation.success) {
+        const errors = validation.error.flatten().fieldErrors;
+        return {
+            success: false,
+            message: "Validation failed. Please check the form data.",
+            errors: errors,
+        };
+    }
+
+    const { variants, ...fabricData } = validation.data;
+
+    try {
+        await db.transaction(async (tx) => {
+            // 2. Update the main Fabric record
+            await tx.update(fabrics)
+                .set(fabricData)
+                .where(eq(fabrics.id, fabricId));
+
+            // 3. Separate variants: existing (with ID) vs. new (no ID)
+            const existingVariants = variants.filter(v => typeof v.id === 'number');
+            const newVariants = variants.filter(v => typeof v.id !== 'number');
+
+            // 4. Handle Existing Variants (Update)
+            for (const variant of existingVariants) {
+                const updateData = {
+                    variantCode: variant.variantCode,
+                    variantName: variant.variantName,
+                    variantImage: variant.variantImage,
+                    stockQuantity: variant.stockQuantity,
+                    hexColorCode: variant.hexColorCode,
+                };
+
+                await tx.update(fabricVariants)
+                    .set(updateData)
+                    .where(eq(fabricVariants.id, variant.id as number)); // Cast added for type safety
+            }
+
+            // 5. Handle New Variants (Insert)
+            if (newVariants.length > 0) {
+                const variantInserts = newVariants.map((variant) => ({
+                    ...variant,
+                    fabricId: fabricId,
+                    stockQuantity: Number(variant.stockQuantity),
+                }));
+                await tx.insert(fabricVariants).values(variantInserts);
+            }
+
+            // 6. Handle Deleted/Cleared Variants (Delete rows whose IDs were NOT in the submitted list)
+            const variantIdsToKeep = existingVariants.map(v => v.id as number);
+
+            // Delete variants for this fabric whose IDs are NOT in the 'keep' list
+            await tx.delete(fabricVariants).where(
+                and(
+                    eq(fabricVariants.fabricId, fabricId),
+                    // If variantIdsToKeep is empty, delete all variants for this fabric
+                    variantIdsToKeep.length > 0 ? notInArray(fabricVariants.id, variantIdsToKeep) : eq(fabricVariants.fabricId, fabricId)
+                )
+            );
+
+        });
+
+        revalidatePath("/fabrics"); 
+        return {
+            success: true,
+            message: `Successfully updated Fabric: ${fabricData.name}.`,
+        };
+
+    } catch (error) {
+        console.error("Database Transaction Error:", error);
+        
+        // Custom check for duplicate key violation
+        if (error && typeof error === 'object' && 'code' in error && error.code === '23505') {
+            const detail = (error as { detail?: string }).detail;
+            const match = detail ? detail.match(/Key \(fabric_id, variant_code\)=\(.*, (.*)\) already exists./) : null;
+            const duplicateCode = match ? match[1] : 'an existing variant code';
+            return {
+                success: false,
+                message: `Failed to update: Variant code '${duplicateCode}' is already used by another variant in this fabric. Variant codes must be unique per fabric design.`,
+                error: "Duplicate key violation.",
+            };
+        }
+        
+        return {
+            success: false,
+            message: `Failed to update fabric due to a database error.`,
+            error: error instanceof Error ? error.message : "An unknown error occurred.",
+        };
+    }
+}
+
+// ===================================
+// --- 4. DELETE FABRIC ACTION ---
+// ===================================
 
 /**
  * Server Action to delete a fabric and all its variants (due to onDelete: 'cascade').

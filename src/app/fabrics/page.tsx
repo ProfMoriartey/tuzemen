@@ -4,6 +4,7 @@ import React, { useState, useEffect } from "react";
 import { deleteFabric } from "../actions/actions";
 import { fetchFabricData } from "../server-utils";
 import NewFabricForm from "./NewFabricForm";
+import EditFabricForm from "./EditFabricForm"; // NEW IMPORT
 import {
   Dialog,
   DialogContent,
@@ -29,7 +30,7 @@ import {
   TableHeader,
   TableRow,
 } from "~/components/ui/table";
-import { Trash2, PlusCircle, Loader2 } from "lucide-react";
+import { Trash2, PlusCircle, Loader2, Pencil } from "lucide-react"; // Added Pencil icon
 
 // Define the type for the data structure returned by getFabrics/fetchFabricData
 type FabricWithVariants = Awaited<ReturnType<typeof fetchFabricData>>[number];
@@ -41,7 +42,12 @@ type FabricWithVariants = Awaited<ReturnType<typeof fetchFabricData>>[number];
 export default function FabricListPage() {
   const [fabrics, setFabrics] = useState<FabricWithVariants[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [dialogOpen, setDialogOpen] = useState(false);
+
+  // State for Create Dialog
+  const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  // State for Edit Dialog
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [fabricToEditId, setFabricToEditId] = useState<number | null>(null);
 
   // Function to load data from the server utility
   const loadFabrics = async () => {
@@ -58,19 +64,21 @@ export default function FabricListPage() {
   };
 
   useEffect(() => {
-    // FIX 1: Use 'void' to mark the Promise as intentionally unhandled
     void loadFabrics();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const FabricDeleteButton = ({ fabricId }: { fabricId: number }) => {
+  const openEditDialog = (id: number) => {
+    setFabricToEditId(id);
+    setEditDialogOpen(true);
+  };
+
+  const FabricActionButtons = ({ fabricId }: { fabricId: number }) => {
     // Client-side execution of Server Action
     const handleDelete = async () => {
       if (window.confirm("Are you sure you want to delete this fabric?")) {
-        // FIX 2: Await the deleteFabric Server Action
         const result = await deleteFabric(fabricId);
         if (result.success) {
-          // Ensure data reload is also awaited
           await loadFabrics();
         } else {
           alert(result.message);
@@ -79,15 +87,26 @@ export default function FabricListPage() {
     };
 
     return (
-      <Button
-        variant="destructive"
-        size="icon"
-        className="h-8 w-8 rounded-md"
-        title="Delete Fabric"
-        onClick={handleDelete}
-      >
-        <Trash2 className="h-4 w-4" />
-      </Button>
+      <div className="flex space-x-2">
+        <Button
+          variant="secondary"
+          size="icon"
+          className="h-8 w-8 rounded-md"
+          title="Edit Fabric"
+          onClick={() => openEditDialog(fabricId)}
+        >
+          <Pencil className="h-4 w-4" />
+        </Button>
+        <Button
+          variant="destructive"
+          size="icon"
+          className="h-8 w-8 rounded-md"
+          title="Delete Fabric"
+          onClick={handleDelete}
+        >
+          <Trash2 className="h-4 w-4" />
+        </Button>
+      </div>
     );
   };
 
@@ -125,8 +144,8 @@ export default function FabricListPage() {
             Fabric Catalog
           </h1>
 
-          {/* --- DIALOG TRIGGER --- */}
-          <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+          {/* --- CREATE DIALOG TRIGGER --- */}
+          <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
             <DialogTrigger asChild>
               <Button className="h-10 px-6">
                 <PlusCircle className="mr-2 h-5 w-5" />
@@ -137,21 +156,39 @@ export default function FabricListPage() {
               <DialogHeader>
                 <DialogTitle>Add New Fabric Design</DialogTitle>
                 <DialogDescription>
-                  Enter the master data and all associated variants. Click save
-                  when done.
+                  Enter the master data and all associated variants.
                 </DialogDescription>
               </DialogHeader>
-              {/* Pass a function to close the dialog and reload data on success */}
               <NewFabricForm
                 onSuccess={() => {
-                  setDialogOpen(false);
-                  // Use 'void' since this is a fire-and-forget Promise call in the handler
+                  setCreateDialogOpen(false);
                   void loadFabrics();
                 }}
               />
             </DialogContent>
           </Dialog>
         </div>
+
+        {/* --- EDIT DIALOG --- */}
+        <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
+          <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-[800px]">
+            <DialogHeader>
+              <DialogTitle>Edit Fabric Design</DialogTitle>
+              <DialogDescription>
+                Modify the fabric details and its variants.
+              </DialogDescription>
+            </DialogHeader>
+            {fabricToEditId && (
+              <EditFabricForm
+                fabricId={fabricToEditId}
+                onSuccess={() => {
+                  setEditDialogOpen(false);
+                  void loadFabrics();
+                }}
+              />
+            )}
+          </DialogContent>
+        </Dialog>
 
         {fabrics.length === 0 ? (
           <Card className="p-10 text-center">
@@ -181,7 +218,7 @@ export default function FabricListPage() {
                     <Badge variant="secondary" className="px-3 py-1">
                       Variants: {fabric.variants.length}
                     </Badge>
-                    <FabricDeleteButton fabricId={fabric.id} />
+                    <FabricActionButtons fabricId={fabric.id} />
                   </div>
                 </CardHeader>
 
