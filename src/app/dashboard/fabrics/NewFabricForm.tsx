@@ -389,7 +389,7 @@ export default function NewFabricForm({ onSuccess }: NewFabricFormProps) {
         <div className="space-y-4">
           {variantInputs.map((variant, index) => (
             <Card
-              key={variant.id || `new-${index}`}
+              key={variant.id ?? `new-${index}`}
               className="relative bg-gray-50 p-4 dark:bg-gray-800"
             >
               <div className="mb-4 flex items-center justify-between">
@@ -462,7 +462,7 @@ export default function NewFabricForm({ onSuccess }: NewFabricFormProps) {
                 <Label htmlFor={`v_hex_${index}`}>Hex Color (Optional)</Label>
                 <Input
                   id={`v_hex_${index}`}
-                  value={variant.hexColorCode || ""}
+                  value={variant.hexColorCode ?? ""}
                   onChange={(e) =>
                     handleVariantChange(index, "hexColorCode", e.target.value)
                   }
