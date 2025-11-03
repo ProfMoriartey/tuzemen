@@ -1,9 +1,9 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { deleteFabric } from "../actions/actions"; // Server Action for delete
-import { fetchFabricData } from "../server-utils"; // New Server Utility to fetch data
-import NewFabricForm from "./NewFabricForm"; // The form component
+import { deleteFabric } from "../actions/actions";
+import { fetchFabricData } from "../server-utils";
+import NewFabricForm from "./NewFabricForm";
 import {
   Dialog,
   DialogContent,
@@ -47,7 +47,6 @@ export default function FabricListPage() {
   const loadFabrics = async () => {
     setIsLoading(true);
     try {
-      // The function call remains the same, but it's defined in the server-utils.ts file.
       const data = await fetchFabricData();
       setFabrics(data);
     } catch (error) {
@@ -59,6 +58,7 @@ export default function FabricListPage() {
   };
 
   useEffect(() => {
+    // FIX 1: Use 'void' to mark the Promise as intentionally unhandled
     void loadFabrics();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -95,7 +95,6 @@ export default function FabricListPage() {
   const attributeKeys: { key: keyof FabricWithVariants; label: string }[] = [
     { key: "isBlackout", label: "Blackout" },
     { key: "isTransparent", label: "Transparent" },
-    // ... rest of your keys
     { key: "isDrapery", label: "Drapery" },
     { key: "hasLeadband", label: "Leadband" },
     { key: "isDryClean", label: "Dry Clean Only" },
@@ -104,7 +103,6 @@ export default function FabricListPage() {
   const weaveKeys: { key: keyof FabricWithVariants; label: string }[] = [
     { key: "isPlainKnit", label: "Plain Knit" },
     { key: "isJacquardKnit", label: "Jacquard Knit" },
-    // ... rest of your keys
     { key: "isPlainTulle", label: "Plain Tulle" },
     { key: "isJacquardTulle", label: "Jacquard Tulle" },
     { key: "isKnit", label: "General Knit" },
@@ -147,7 +145,8 @@ export default function FabricListPage() {
               <NewFabricForm
                 onSuccess={() => {
                   setDialogOpen(false);
-                  loadFabrics();
+                  // Use 'void' since this is a fire-and-forget Promise call in the handler
+                  void loadFabrics();
                 }}
               />
             </DialogContent>
@@ -164,7 +163,6 @@ export default function FabricListPage() {
         ) : (
           <div className="space-y-6">
             {fabrics.map((fabric) => (
-              // ... Fabric Card rendering logic remains the same ...
               <Card
                 key={fabric.id}
                 className="shadow-lg transition-shadow duration-300 hover:shadow-xl"
