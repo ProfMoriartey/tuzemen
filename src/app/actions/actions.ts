@@ -8,11 +8,8 @@ import { eq, and, notInArray, desc } from "drizzle-orm"; // Added desc for order
 
 // ===================================
 // --- 1. CREATE FABRIC ACTION ---
-// ===================================
+// ... (createFabric function remains unchanged) ...
 
-/**
- * Server Action to create a new Fabric design and its associated Variants in a single transaction.
- */
 export async function createFabric(formData: FabricFormInput) {
   const validation = fabricSchema.safeParse(formData);
 
@@ -80,11 +77,8 @@ export async function createFabric(formData: FabricFormInput) {
 
 // ===================================
 // --- 2. READ ACTIONS ---
-// ===================================
+// ... (getFabrics and getFabricForEdit functions remain unchanged) ...
 
-/**
- * Server Action to fetch all fabrics along with their associated variants.
- */
 export async function getFabrics() {
     const fabricList = await db.query.fabrics.findMany({
         orderBy: (fabrics) => [desc(fabrics.createdAt)],
@@ -97,9 +91,6 @@ export async function getFabrics() {
     return fabricList;
 }
 
-/**
- * Server Action to fetch a single fabric record for pre-filling an edit form.
- */
 export async function getFabricForEdit(id: number) {
     const fabric = await db.query.fabrics.findFirst({
         where: eq(fabrics.id, id),
@@ -114,9 +105,6 @@ export async function getFabricForEdit(id: number) {
 // --- 3. UPDATE FABRIC ACTION ---
 // ===================================
 
-/**
- * Server Action to update an existing Fabric design and manage its Variants.
- */
 export async function updateFabric(fabricId: number, formData: FabricFormInput) {
     // 1. Input Validation using Zod
     const validation = fabricSchema.safeParse(formData);
@@ -155,7 +143,8 @@ export async function updateFabric(fabricId: number, formData: FabricFormInput) 
 
                 await tx.update(fabricVariants)
                     .set(updateData)
-                    .where(eq(fabricVariants.id, variant.id as number)); // Cast added for type safety
+                    // FIX 1: Replaced 'as number' with non-null assertion operator '!'
+                    .where(eq(fabricVariants.id, variant.id!)); 
             }
 
             // 5. Handle New Variants (Insert)
@@ -169,13 +158,13 @@ export async function updateFabric(fabricId: number, formData: FabricFormInput) 
             }
 
             // 6. Handle Deleted/Cleared Variants (Delete rows whose IDs were NOT in the submitted list)
-            const variantIdsToKeep = existingVariants.map(v => v.id as number);
+            // FIX 1: Replaced 'as number' with non-null assertion operator '!'
+            const variantIdsToKeep = existingVariants.map(v => v.id!); 
 
             // Delete variants for this fabric whose IDs are NOT in the 'keep' list
             await tx.delete(fabricVariants).where(
                 and(
                     eq(fabricVariants.fabricId, fabricId),
-                    // If variantIdsToKeep is empty, delete all variants for this fabric
                     variantIdsToKeep.length > 0 ? notInArray(fabricVariants.id, variantIdsToKeep) : eq(fabricVariants.fabricId, fabricId)
                 )
             );
@@ -194,7 +183,11 @@ export async function updateFabric(fabricId: number, formData: FabricFormInput) 
         // Custom check for duplicate key violation
         if (error && typeof error === 'object' && 'code' in error && error.code === '23505') {
             const detail = (error as { detail?: string }).detail;
-            const match = detail ? detail.match(/Key \(fabric_id, variant_code\)=\(.*, (.*)\) already exists./) : null;
+            
+            // FIX 2: Used RegExp#exec() method instead of string.match()
+            const regex = /Key \(fabric_id, variant_code\)=\(.*, (.*)\) already exists./;
+            const match = detail ? regex.exec(detail) : null;
+            
             const duplicateCode = match ? match[1] : 'an existing variant code';
             return {
                 success: false,
@@ -213,11 +206,8 @@ export async function updateFabric(fabricId: number, formData: FabricFormInput) 
 
 // ===================================
 // --- 4. DELETE FABRIC ACTION ---
-// ===================================
+// ... (deleteFabric function remains unchanged) ...
 
-/**
- * Server Action to delete a fabric and all its variants (due to onDelete: 'cascade').
- */
 export async function deleteFabric(id: number) {
     try {
         await db.delete(fabrics).where(eq(fabrics.id, id));
