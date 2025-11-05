@@ -4,7 +4,9 @@ import React, { useState, useEffect } from "react";
 import { deleteFabric } from "../../actions/actions";
 import { fetchFabricData } from "../../../utils/server-utils";
 import NewFabricForm from "./NewFabricForm";
-import EditFabricForm from "./EditFabricForm"; // NEW IMPORT
+import EditFabricForm from "./EditFabricForm";
+// FIX: Import the new Variant Manager Dialog
+import VariantManagerDialog from "./VariantManagerDialog";
 import {
   Dialog,
   DialogContent,
@@ -30,14 +32,13 @@ import {
   TableHeader,
   TableRow,
 } from "~/components/ui/table";
-import { Trash2, PlusCircle, Loader2, Pencil } from "lucide-react"; // Added Pencil icon
+import { Trash2, PlusCircle, Loader2, Pencil } from "lucide-react";
 
 // Define the type for the data structure returned by getFabrics/fetchFabricData
 type FabricWithVariants = Awaited<ReturnType<typeof fetchFabricData>>[number];
 
 /**
  * Component to display the list of all fabrics with their details.
- * This is now a Client Component to manage the Dialog state and client data hydration.
  */
 export default function FabricListPage() {
   const [fabrics, setFabrics] = useState<FabricWithVariants[]>([]);
@@ -45,9 +46,13 @@ export default function FabricListPage() {
 
   // State for Create Dialog
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
-  // State for Edit Dialog
+  // State for Edit Core Dialog
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [fabricToEditId, setFabricToEditId] = useState<number | null>(null);
+
+  // NEW STATE: Variant Management Dialog
+  const [variantManagerOpen, setVariantManagerOpen] = useState(false);
+  const [fabricToManageName, setFabricToManageName] = useState("");
 
   // Function to load data from the server utility
   const loadFabrics = async () => {
@@ -68,15 +73,31 @@ export default function FabricListPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Handler to open the core edit dialog
   const openEditDialog = (id: number) => {
     setFabricToEditId(id);
     setEditDialogOpen(true);
   };
 
-  const FabricActionButtons = ({ fabricId }: { fabricId: number }) => {
+  // Handler to open the variant manager dialog
+  const openVariantManager = (id: number, name: string) => {
+    setFabricToEditId(id); // Reuse the ID state for which fabric is currently active
+    setFabricToManageName(name);
+    setVariantManagerOpen(true);
+  };
+
+  const FabricActionButtons = ({
+    fabricId,
+    fabricName,
+  }: {
+    fabricId: number;
+    fabricName: string;
+  }) => {
     // Client-side execution of Server Action
     const handleDelete = async () => {
-      if (window.confirm("Are you sure you want to delete this fabric?")) {
+      if (
+        window.confirm(`Are you sure you want to delete fabric ${fabricName}?`)
+      ) {
         const result = await deleteFabric(fabricId);
         if (result.success) {
           await loadFabrics();
@@ -92,10 +113,20 @@ export default function FabricListPage() {
           variant="secondary"
           size="icon"
           className="h-8 w-8 rounded-md"
-          title="Edit Fabric"
+          title="Edit Core Details"
           onClick={() => openEditDialog(fabricId)}
         >
           <Pencil className="h-4 w-4" />
+        </Button>
+        {/* ADDED Variant Manager Button */}
+        <Button
+          variant="outline"
+          size="icon"
+          className="h-8 w-8 rounded-md"
+          title="Manage Variants"
+          onClick={() => openVariantManager(fabricId, fabricName)}
+        >
+          <PlusCircle className="h-4 w-4" />
         </Button>
         <Button
           variant="destructive"
@@ -169,22 +200,54 @@ export default function FabricListPage() {
           </Dialog>
         </div>
 
-        {/* --- EDIT DIALOG --- */}
+        {/* ------------------------------------------- */}
+        {/* --- 1. EDIT CORE DETAILS DIALOG --- */}
+        {/* ------------------------------------------- */}
         <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
           <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-[800px]">
             <DialogHeader>
-              <DialogTitle>Edit Fabric Design</DialogTitle>
+              <DialogTitle>Edit Core Fabric Details</DialogTitle>
               <DialogDescription>
-                Modify the fabric details and its variants.
+                Modify the name, composition, and physical attributes.
               </DialogDescription>
             </DialogHeader>
             {fabricToEditId && (
               <EditFabricForm
                 fabricId={fabricToEditId}
+                // When core details are saved, reload the list and close
                 onSuccess={() => {
                   setEditDialogOpen(false);
                   void loadFabrics();
                 }}
+                // Pass the handler to open the variant manager from within the edit form
+                onManageVariants={openVariantManager}
+              />
+            )}
+          </DialogContent>
+        </Dialog>
+
+        {/* ------------------------------------------- */}
+        {/* --- 2. VARIANT MANAGER DIALOG (NEW) --- */}
+        {/* ------------------------------------------- */}
+        <Dialog open={variantManagerOpen} onOpenChange={setVariantManagerOpen}>
+          <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-[800px]">
+            <DialogHeader>
+              <DialogTitle>Manage Variants</DialogTitle>
+              <DialogDescription>
+                Add, edit, or remove color/pattern variants for:{" "}
+                {fabricToManageName}
+              </DialogDescription>
+            </DialogHeader>
+            {fabricToEditId && (
+              <VariantManagerDialog
+                fabricId={fabricToEditId}
+                fabricName={fabricToManageName}
+                // When variant changes are saved, reload list and close
+                onSuccess={() => {
+                  setVariantManagerOpen(false);
+                  void loadFabrics();
+                }}
+                onClose={() => setVariantManagerOpen(false)}
               />
             )}
           </DialogContent>
@@ -218,11 +281,15 @@ export default function FabricListPage() {
                     <Badge variant="secondary" className="px-3 py-1">
                       Variants: {fabric.variants.length}
                     </Badge>
-                    <FabricActionButtons fabricId={fabric.id} />
+                    <FabricActionButtons
+                      fabricId={fabric.id}
+                      fabricName={fabric.name}
+                    />
                   </div>
                 </CardHeader>
 
                 <CardContent className="pt-6">
+                  {/* ... (Attributes, Weave, and Variants Table rendering remains the same) ... */}
                   <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
                     {/* Attributes Column */}
                     <div>
@@ -270,7 +337,7 @@ export default function FabricListPage() {
                       </ul>
                     </div>
 
-                    {/* Variants Table Column */}
+                    {/* Variants Table Column (Show only a preview) */}
                     <div className="overflow-x-auto lg:col-span-1">
                       <h3 className="mb-2 border-b pb-1 font-semibold text-gray-700 dark:text-gray-300">
                         Variants
@@ -287,7 +354,8 @@ export default function FabricListPage() {
                             </TableRow>
                           </TableHeader>
                           <TableBody>
-                            {fabric.variants.map((variant) => (
+                            {/* Limit preview rows */}
+                            {fabric.variants.slice(0, 3).map((variant) => (
                               <TableRow key={variant.id}>
                                 <TableCell className="text-xs font-medium">
                                   {variant.variantCode}
@@ -300,13 +368,37 @@ export default function FabricListPage() {
                                 </TableCell>
                               </TableRow>
                             ))}
+                            {fabric.variants.length > 3 && (
+                              <TableRow>
+                                <TableCell
+                                  colSpan={3}
+                                  className="text-center text-xs text-gray-500 italic"
+                                >
+                                  ... {fabric.variants.length - 3} more
+                                  variants. Click{" "}
+                                  <Pencil className="inline h-3 w-3" /> to
+                                  manage.
+                                </TableCell>
+                              </TableRow>
+                            )}
                           </TableBody>
                         </Table>
                       ) : (
                         <p className="text-sm text-gray-400 italic">
-                          No variants recorded.
+                          No variants recorded. Click{" "}
+                          <PlusCircle className="inline h-3 w-3" /> to add them.
                         </p>
                       )}
+                      <Button
+                        variant="link"
+                        size="sm"
+                        className="mt-2 p-0 text-sm"
+                        onClick={() =>
+                          openVariantManager(fabric.id, fabric.name)
+                        }
+                      >
+                        Go to Variant Manager
+                      </Button>
                     </div>
                   </div>
                 </CardContent>

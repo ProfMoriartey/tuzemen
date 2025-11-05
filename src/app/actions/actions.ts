@@ -2,7 +2,7 @@
 
 import { db } from "../../server/db";
 import { fabrics, fabricVariants } from "../../server/db/schema";
-import { fabricSchema, type FabricFormInput, type VariantFormInput } from "../../lib/types";
+import { coreFabricSchema, fabricSchema, type FabricFormInput, type VariantFormInput } from "../../lib/types";
 import { revalidatePath } from "next/cache";
 import { eq, and, notInArray, desc } from "drizzle-orm"; // Added desc for ordering
 
@@ -106,9 +106,9 @@ export async function getFabricForEdit(id: number) {
 // ===================================
 
 export async function updateFabric(fabricId: number, formData: FabricFormInput) {
-    // 1. Input Validation using Zod
-    const validation = fabricSchema.safeParse(formData);
-
+    // 1. Input Validation
+    const validation = coreFabricSchema.safeParse(formData);
+    
     if (!validation.success) {
         const errors = validation.error.flatten().fieldErrors;
         return {
@@ -118,80 +118,38 @@ export async function updateFabric(fabricId: number, formData: FabricFormInput) 
         };
     }
 
-    const { variants, ...fabricData } = validation.data;
-
+ const dataToUpdate = validation.data; // This data now only contains core fabric fields
     try {
         await db.transaction(async (tx) => {
             // 2. Update the main Fabric record
             await tx.update(fabrics)
-                .set(fabricData)
+                .set(dataToUpdate) // Set only the core fields
                 .where(eq(fabrics.id, fabricId));
 
-            // 3. Separate variants: existing (with ID) vs. new (no ID)
-            const existingVariants = variants.filter(v => typeof v.id === 'number');
-            const newVariants = variants.filter(v => typeof v.id !== 'number');
-
-            // 4. Handle Existing Variants (Update)
-            for (const variant of existingVariants) {
-                const updateData = {
-                    variantCode: variant.variantCode,
-                    variantName: variant.variantName,
-                    variantImage: variant.variantImage,
-                    stockQuantity: variant.stockQuantity,
-                    hexColorCode: variant.hexColorCode,
-                };
-
-                await tx.update(fabricVariants)
-                    .set(updateData)
-                    // FIX 1: Replaced 'as number' with non-null assertion operator '!'
-                    .where(eq(fabricVariants.id, variant.id!)); 
-            }
-
-            // 5. Handle New Variants (Insert)
-            if (newVariants.length > 0) {
-                const variantInserts = newVariants.map((variant) => ({
-                    ...variant,
-                    fabricId: fabricId,
-                    stockQuantity: Number(variant.stockQuantity),
-                }));
-                await tx.insert(fabricVariants).values(variantInserts);
-            }
-
-            // 6. Handle Deleted/Cleared Variants (Delete rows whose IDs were NOT in the submitted list)
-            // FIX 1: Replaced 'as number' with non-null assertion operator '!'
-            const variantIdsToKeep = existingVariants.map(v => v.id!); 
-
-            // Delete variants for this fabric whose IDs are NOT in the 'keep' list
-            await tx.delete(fabricVariants).where(
-                and(
-                    eq(fabricVariants.fabricId, fabricId),
-                    variantIdsToKeep.length > 0 ? notInArray(fabricVariants.id, variantIdsToKeep) : eq(fabricVariants.fabricId, fabricId)
-                )
-            );
-
+            // CRITICAL: Since we separated the forms, we SKIP all variant logic here.
+            // Variants are updated only via the VariantManagerDialog.
         });
 
         revalidatePath("/fabrics"); 
         return {
             success: true,
-            message: `Successfully updated Fabric: ${fabricData.name}.`,
+            message: `Successfully updated Fabric: ${dataToUpdate.name}.`,
         };
 
     } catch (error) {
         console.error("Database Transaction Error:", error);
         
-        // Custom check for duplicate key violation
+        // Custom check for duplicate key violation (23505)
         if (error && typeof error === 'object' && 'code' in error && error.code === '23505') {
             const detail = (error as { detail?: string }).detail;
-            
-            // FIX 2: Used RegExp#exec() method instead of string.match()
             const regex = /Key \(fabric_id, variant_code\)=\(.*, (.*)\) already exists./;
             const match = detail ? regex.exec(detail) : null;
             
             const duplicateCode = match ? match[1] : 'an existing variant code';
+            
             return {
                 success: false,
-                message: `Failed to update: Variant code '${duplicateCode}' is already used by another variant in this fabric. Variant codes must be unique per fabric design.`,
+                message: `Failed to update: Variant code '${duplicateCode}' is already used by another variant in this fabric. Please check for duplicates or conflicts in variant codes.`,
                 error: "Duplicate key violation.",
             };
         }
