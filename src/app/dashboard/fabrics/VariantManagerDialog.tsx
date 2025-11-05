@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useTransition } from "react";
-import { getFabricForEdit, updateFabric } from "../../actions/actions";
+
 import type { FabricFormInput, VariantFormInput } from "../../../lib/types";
 import { Loader2, Plus, X } from "lucide-react";
 import { Input } from "~/components/ui/input";
@@ -10,6 +10,8 @@ import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
 import { Badge } from "~/components/ui/badge";
 import { UploadButton, UploadDropzone } from "~/lib/uploadthing"; // For variant image uploads
+import { getFabricForEdit } from "~/app/actions/fabric.read";
+import { updateFabric } from "~/app/actions/fabric.update";
 
 // Extended Variant Type to include the optional ID for existing variants
 type VariantState = VariantFormInput & { id?: number };

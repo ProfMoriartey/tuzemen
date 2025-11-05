@@ -2,7 +2,7 @@
 
 import React, { useState, useTransition } from "react";
 // Imports are now allowed because the file extension is .tsx
-import { createFabric } from "../../actions/actions";
+import { createFabric } from "../../actions/fabric.create";
 import { fabricSchema, type FabricFormInput } from "../../../lib/types";
 import { cn } from "~/lib/utils";
 import { Button } from "~/components/ui/button";

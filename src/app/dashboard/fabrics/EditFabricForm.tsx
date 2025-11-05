@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useTransition, useEffect } from "react";
-import { updateFabric, getFabricForEdit } from "../../actions/actions";
+
 import {
   fabricSchema,
   type FabricFormInput,
@@ -19,6 +19,8 @@ import { UploadButton } from "~/lib/uploadthing";
 import AttributesSection from "./AttributesSection";
 import BaseImageUploader from "./BaseImageUploader";
 import CoreDetailsSection from "./CoreDetailsSection";
+import { getFabricForEdit } from "~/app/actions/fabric.read";
+import { updateFabric } from "~/app/actions/fabric.update";
 
 interface EditFabricFormProps {
   fabricId: number;

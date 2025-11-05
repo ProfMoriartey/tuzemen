@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { deleteFabric } from "../../actions/actions";
+
 import { fetchFabricData } from "../../../utils/server-utils";
 import NewFabricForm from "./NewFabricForm";
 import EditFabricForm from "./EditFabricForm";
@@ -33,6 +33,7 @@ import {
   TableRow,
 } from "~/components/ui/table";
 import { Trash2, PlusCircle, Loader2, Pencil } from "lucide-react";
+import { deleteFabric } from "~/app/actions/fabric.delete";
 
 // Define the type for the data structure returned by getFabrics/fetchFabricData
 type FabricWithVariants = Awaited<ReturnType<typeof fetchFabricData>>[number];
@@ -298,7 +299,10 @@ export default function FabricListPage() {
                       </h3>
                       <ul className="space-y-1 text-sm">
                         {attributeKeys.map((item) => (
-                          <li key={item.key} className="flex justify-between">
+                          <li
+                            key={item.key as string}
+                            className="flex justify-between"
+                          >
                             <span>{item.label}:</span>
                             <span
                               className={
@@ -321,7 +325,10 @@ export default function FabricListPage() {
                       </h3>
                       <ul className="space-y-1 text-sm">
                         {weaveKeys.map((item) => (
-                          <li key={item.key} className="flex justify-between">
+                          <li
+                            key={item.key as string}
+                            className="flex justify-between"
+                          >
                             <span>{item.label}:</span>
                             <span
                               className={

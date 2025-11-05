@@ -2,7 +2,7 @@
 
 import { db } from "../../server/db";
 import { fabrics, fabricVariants } from "../../server/db/schema";
-import { fabricSchema, type FabricFormInput } from "../../lib/types";
+import { fabricSchema, type FabricFormInput, type VariantFormInput } from "../../lib/types";
 import { revalidatePath } from "next/cache";
 
 /**
@@ -37,9 +37,11 @@ export async function createFabric(formData: FabricFormInput) {
       }
 
       // Prepare and insert Fabric Variants
-      const variantInserts = variants.map((variant) => ({
+      const variantInserts = variants.map((variant: VariantFormInput) => ({
         ...variant,
         fabricId: fabricId,
+        // Since stockQuantity is already validated and coerced to number in the form, 
+        // the explicit Number() call here ensures maximum safety in the final object.
         stockQuantity: Number(variant.stockQuantity), 
       }));
 
